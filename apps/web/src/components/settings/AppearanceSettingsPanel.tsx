@@ -348,6 +348,31 @@ export function AppearanceSettingsPanel() {
             />
           }
         />
+        <SettingsRow
+          {...searchableSetting("composer-effects")}
+          description="Glow around the composer as you type, send, and when the agent finishes or needs you."
+          resetAction={
+            settings.composerEffectsEnabled !== DEFAULT_UNIFIED_SETTINGS.composerEffectsEnabled ? (
+              <SettingResetButton
+                label="composer effects"
+                onClick={() =>
+                  updateSettings({
+                    composerEffectsEnabled: DEFAULT_UNIFIED_SETTINGS.composerEffectsEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.composerEffectsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ composerEffectsEnabled: Boolean(checked) })
+              }
+              aria-label="Composer effects"
+            />
+          }
+        />
         <AdvancedSettings
           targetIds={[
             searchableSetting("panel-animations").id,

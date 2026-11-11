@@ -368,6 +368,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["latex tex katex equations formulas markdown"],
   },
   {
+    id: "composer-effects",
+    title: "Composer effects",
+    to: "/settings/appearance",
+    searchTerms: ["composer glow wave animation gpu webgpu shader effects pulse ripple"],
+  },
+  {
     id: "panel-animations",
     title: "Panel animations",
     to: "/settings/appearance",
@@ -746,12 +752,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Rich text composer",
     to: "/settings/chat",
     searchTerms: ["composer rich text tiptap bold italic markdown styled wysiwyg"],
-  },
-  {
-    id: "composer-effects",
-    title: "Composer effects",
-    to: "/settings/chat",
-    searchTerms: ["composer glow wave animation gpu webgpu shader effects purple pulse"],
   },
   {
     id: "send-shortcut",
