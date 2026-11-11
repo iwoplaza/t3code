@@ -748,6 +748,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["composer rich text tiptap bold italic markdown styled wysiwyg"],
   },
   {
+    id: "composer-effects",
+    title: "Composer effects",
+    to: "/settings/chat",
+    searchTerms: ["composer glow wave animation gpu webgpu shader effects purple pulse"],
+  },
+  {
     id: "send-shortcut",
     title: "Send shortcut",
     to: "/settings/chat",

@@ -5,6 +5,7 @@ import * as NodeZlib from "node:zlib";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import compression from "compression";
+import typegpu from "unplugin-typegpu/vite";
 import { playwright } from "vite-plus/test/browser-playwright";
 import { defineProject, type TestProjectInlineConfiguration } from "vite-plus/test/config";
 import "vite-plus/test/config";
@@ -323,6 +324,8 @@ export default defineConfig(() => {
             ],
           }),
       tanstackRouter({ autoCodeSplitting: true }),
+      // Compiles 'use gpu' functions to WGSL; only the GPU effect modules need it.
+      typegpu({ include: [/ComposerEffects\.tsx$/] }),
       react({ compiler: true }),
       tailwindPlugins(bundledDev),
       warmBundledDevPlugin(),

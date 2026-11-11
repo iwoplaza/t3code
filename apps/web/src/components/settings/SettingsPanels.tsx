@@ -531,6 +531,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.composerRichTextEnabled !== DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled
       ? ["Rich text composer"]
       : []),
+    ...(settings.composerEffectsEnabled !== DEFAULT_UNIFIED_SETTINGS.composerEffectsEnabled
+      ? ["Composer effects"]
+      : []),
     ...(settings.sendShortcut !== DEFAULT_UNIFIED_SETTINGS.sendShortcut ? ["Send shortcut"] : []),
     ...(settings.followUpBehavior !== DEFAULT_UNIFIED_SETTINGS.followUpBehavior
       ? ["Follow-up behavior"]
@@ -660,6 +663,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       showSkillsInSlashMenu: DEFAULT_UNIFIED_SETTINGS.showSkillsInSlashMenu,
       composerRichTextEnabled: DEFAULT_UNIFIED_SETTINGS.composerRichTextEnabled,
+      composerEffectsEnabled: DEFAULT_UNIFIED_SETTINGS.composerEffectsEnabled,
       sendShortcut: DEFAULT_UNIFIED_SETTINGS.sendShortcut,
       followUpBehavior: DEFAULT_UNIFIED_SETTINGS.followUpBehavior,
       toolCallVisibility: DEFAULT_UNIFIED_SETTINGS.toolCallVisibility,
@@ -1173,6 +1177,31 @@ export function ChatSettingsPanel() {
                 updateSettings({ composerRichTextEnabled: Boolean(checked) })
               }
               aria-label="Rich text composer"
+            />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("composer-effects")}
+          description="Glow around the composer as you type, send, and when the agent finishes or needs you."
+          resetAction={
+            settings.composerEffectsEnabled !== DEFAULT_UNIFIED_SETTINGS.composerEffectsEnabled ? (
+              <SettingResetButton
+                label="composer effects"
+                onClick={() =>
+                  updateSettings({
+                    composerEffectsEnabled: DEFAULT_UNIFIED_SETTINGS.composerEffectsEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.composerEffectsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ composerEffectsEnabled: Boolean(checked) })
+              }
+              aria-label="Composer effects"
             />
           }
         />

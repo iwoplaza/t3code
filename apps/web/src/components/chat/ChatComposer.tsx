@@ -57,7 +57,9 @@ import { splitTransferredFiles } from "./workspaceFileDrop";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
+  lazy,
   memo,
+  Suspense,
   use,
   useEffect,
   useEffectEvent,
@@ -116,6 +118,7 @@ import {
   useRetainedContextPayloads,
 } from "./composerContextUndo";
 import { ComposerBanner } from "./ComposerBanner";
+import type { ComposerEffectsHandle } from "./ComposerEffects";
 import { ComposerSurface } from "./ComposerSurface";
 import { CollapsedComposerPromptPreview } from "./CollapsedComposerPromptPreview";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./ComposerBannerStack";
@@ -280,6 +283,11 @@ import { ComposerControlsBar } from "./ComposerControlsBar";
 import { composerCommandKeyHandler } from "./composerCommandKey";
 import { usePromptSuggestion } from "./usePromptSuggestion";
 import { useFreshSessionArmed } from "./freshSessionArms";
+
+// Opt-in; the WebGPU code and its dependencies load only once the setting is on.
+const ComposerEffects = lazy(() =>
+  import("./ComposerEffects").then((module) => ({ default: module.ComposerEffects })),
+);
 
 function consumePasteAsTextShortcut(deadline: { current: number }): boolean {
   const armed = Date.now() <= deadline.current;
@@ -1018,6 +1026,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     pendingUserInputs.length === 0;
 
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
+  const composerEffectsRef = useRef<ComposerEffectsHandle>(null);
   const pasteAsTextShortcutUntilRef = useRef(0);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const composerSurfaceRef = useRef<HTMLDivElement>(null);
@@ -1565,6 +1574,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     contextIds: string[],
   ) => {
     refreshWorkspaceSnapshotOnTyping();
+    composerEffectsRef.current?.stroke();
     if (activePendingProgress?.activeQuestion && pendingUserInputs.length > 0) {
       if (activePendingProgress.activeQuestion.allowCustomAnswer === false) return;
       setComposerCursor(nextCursor);
@@ -2156,6 +2166,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event,
       onSend: (sendEvent) => {
         providerInputRejectedRef.current = false;
+        composerEffectsRef.current?.send();
         onSend(
           sendEvent,
           dispatchMode ??
@@ -3365,6 +3376,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         />
       </ComposerBanner.Dock>
       <div className="relative">
+        {settings.composerEffectsEnabled ? (
+          <Suspense fallback={null}>
+            <ComposerEffects
+              ref={composerEffectsRef}
+              scopeKey={attachmentTargetKey}
+              running={phase === "running"}
+              needsAttention={pendingApprovals.length > 0 || pendingUserInputs.length > 0}
+            />
+          </Suspense>
+        ) : null}
         <ComposerSurface.Main
           ref={composerMainSurfaceRef}
           data-inline-resting-controls="true"
