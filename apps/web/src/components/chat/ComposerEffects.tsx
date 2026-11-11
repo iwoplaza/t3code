@@ -31,6 +31,12 @@ const PULSE_HUE_SHIFT = 0.7;
 const COMPLETE_SECONDS = 1.5;
 const ATTENTION_PULSE_SECONDS = 0.75;
 const ATTENTION_PULSES = 3;
+// Perlin gradients are precomputed for this domain; samples outside it wrap around.
+const NOISE_CACHE_SIZE = 32;
+// Two octaves of Perlin noise never add up to more than this.
+const MAX_WARP = 1.5;
+// The glow is soft, so drawing it at device resolution buys nothing but 4x the pixels on 2x screens.
+const RENDER_SCALE = 1;
 
 const Params = d.struct({
   // The theme's primary colour; every effect uses it and differs only in shape and motion.
@@ -38,7 +44,8 @@ const Params = d.struct({
   size: d.vec2f,
   boxHalf: d.vec2f,
   radius: d.f32,
-  // Per keystroke slot: its age, its noise seed, and its origin on the edge relative to the centre.
+  // Live keystroke pulses come first: their age, noise seed, and origin relative to the centre.
+  pulseCount: d.u32,
   pulses: d.arrayOf(d.f32, PULSE_SLOTS),
   seeds: d.arrayOf(d.f32, PULSE_SLOTS),
   origins: d.arrayOf(d.vec2f, PULSE_SLOTS),
@@ -85,6 +92,17 @@ function strokePulse(
     return glow;
   }
   const t = age / PULSE_SECONDS;
+  const ringWidth = 1.5 + age * 4;
+  const reachWidth = PULSE_REACH * (0.4 + t);
+  // Skip the noise for pixels the ripple can't reach, however the noise bends it.
+  const maxBend = MAX_WARP * (1 + age * PULSE_WARP);
+  const alongEdge = std.sqrt(std.max(std.dot(q, q) - outside * outside, 0));
+  if (
+    std.abs(outside - age * PULSE_SPEED) > maxBend + 3 * ringWidth ||
+    alongEdge > 3 * reachWidth
+  ) {
+    return glow;
+  }
   const fade = (1 - t) * (1 - t) * (1 - t);
   // Two octaves: broad bends plus finer, faster churn on top.
   const z = seed + age * PULSE_DRIFT;
@@ -93,9 +111,8 @@ function strokePulse(
     0.5 * perlin3d.sample(d.vec3f(warpAt.mul(2.3), z * 1.7 + 19));
   // The ripple is a copy of the outline pushed outwards, visible only along the edge near the key.
   const offset = age * PULSE_SPEED + warp * (1 + age * PULSE_WARP);
-  const ring = gaussian(outside - offset, 1.5 + age * 4);
-  const alongEdge = std.sqrt(std.max(std.dot(q, q) - outside * outside, 0));
-  const reach = gaussian(alongEdge, PULSE_REACH * (0.4 + t));
+  const ring = gaussian(outside - offset, ringWidth);
+  const reach = gaussian(alongEdge, reachWidth);
   return glow + PULSE_STRENGTH * ring * reach * fade;
 }
 
@@ -104,6 +121,9 @@ const fragment = tgpu.fragmentFn({ in: { uv: d.vec2f }, out: d.vec4f })(({ uv })
   const params = layout.$.params;
   const p = uv.sub(0.5).mul(params.size);
   const dist = sdRoundedBox2d(p, params.boxHalf, params.radius);
+  if (dist < -3) {
+    return d.vec4f();
+  }
   const outside = std.max(dist, 0);
   // Fades everything out just inside the border so the glow never sits on the text.
   const rim = std.smoothstep(-3, 1, dist);
@@ -116,7 +136,7 @@ const fragment = tgpu.fragmentFn({ in: { uv: d.vec2f }, out: d.vec4f })(({ uv })
   // Noise is read on a circle around the composer, so the warp wraps without a seam.
   const warpAt = d.vec2f(std.cos(around * TAU), std.sin(around * TAU)).mul(PULSE_WARP_FREQUENCY);
   let pulses = d.f32(0);
-  for (let i = 0; i < PULSE_SLOTS; i++) {
+  for (let i = d.u32(0); i < params.pulseCount; i++) {
     pulses += strokePulse(
       p,
       outside,
@@ -164,7 +184,11 @@ let rootPromise: Promise<TgpuRoot | null> | null = null;
 const pipelines = new WeakMap<TgpuRoot, ReturnType<typeof createPipeline>>();
 
 function createPipeline(root: TgpuRoot) {
-  return root.createRenderPipeline({ vertex: common.fullScreenTriangle, fragment });
+  const size = NOISE_CACHE_SIZE;
+  const noiseCache = perlin3d.staticCache({ root, size: d.vec3u(size, size, size) });
+  return root
+    .pipe(noiseCache.inject())
+    .createRenderPipeline({ vertex: common.fullScreenTriangle, fragment });
 }
 
 function getRoot(): Promise<TgpuRoot | null> {
@@ -210,6 +234,12 @@ function caretRect(host: Element | null): DOMRect | null {
   return (node instanceof Element ? node : node.parentElement)?.getBoundingClientRect() ?? null;
 }
 
+const ORIGIN: [number, number] = [0, 0];
+
+function pad<T>(values: T[], filler: T): T[] {
+  return Array.from({ length: PULSE_SLOTS }, (_, index) => values[index] ?? filler);
+}
+
 function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
@@ -253,9 +283,8 @@ function createEngine(canvas: HTMLCanvasElement): Engine {
     if (!host) return;
     boxWidth = host.offsetWidth;
     boxHeight = host.offsetHeight;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.max(1, Math.round((boxWidth + PAD * 2) * dpr));
-    canvas.height = Math.max(1, Math.round((boxHeight + PAD * 2) * dpr));
+    canvas.width = Math.max(1, Math.round((boxWidth + PAD * 2) * RENDER_SCALE));
+    canvas.height = Math.max(1, Math.round((boxHeight + PAD * 2) * RENDER_SCALE));
   };
   const stopObserving = canvas.parentElement ? observeResize(canvas.parentElement, resize) : null;
   resize();
@@ -279,6 +308,8 @@ function createEngine(canvas: HTMLCanvasElement): Engine {
     const seconds = now / 1000;
 
     const strokeAge = seconds - strokeAt;
+    // Only pulses still glowing go to the GPU, so idle slots cost nothing per pixel.
+    const live = pulseTimes.flatMap((at, slot) => (seconds - at < GLOW_SECONDS ? [slot] : []));
     const sendAge = seconds - sendAt;
     const completeAge = seconds - completeAt;
     const attentionAge = seconds - attentionAt;
@@ -287,9 +318,19 @@ function createEngine(canvas: HTMLCanvasElement): Engine {
       size: d.vec2f(boxWidth + PAD * 2, boxHeight + PAD * 2),
       boxHalf: d.vec2f(boxWidth / 2, boxHeight / 2),
       radius: RADIUS,
-      pulses: pulseTimes.map((at) => Math.min(seconds - at, NEVER)),
-      seeds: pulseSeeds,
-      origins: pulseOrigins,
+      pulseCount: live.length,
+      pulses: pad(
+        live.map((slot) => seconds - (pulseTimes[slot] ?? 0)),
+        NEVER,
+      ),
+      seeds: pad(
+        live.map((slot) => pulseSeeds[slot] ?? 0),
+        0,
+      ),
+      origins: pad(
+        live.map((slot) => pulseOrigins[slot] ?? ORIGIN),
+        ORIGIN,
+      ),
       sendAge: Math.min(sendAge, NEVER),
       completeAge: Math.min(completeAge, NEVER),
       attentionAge: Math.min(attentionAge, NEVER),
